@@ -1,0 +1,68 @@
+#include "mc/H5IO.hpp"
+
+#include <stdexcept>
+
+namespace mc {
+
+H5Writer::H5Writer(const std::string& filename)
+    : file_(filename, HighFive::File::Overwrite) {}
+
+H5Reader::H5Reader(const std::string& filename)
+    : file_(filename, HighFive::File::ReadOnly) {}
+
+HighFive::Group H5Writer::getOrCreateGroup(const std::string& path) {
+    if (file_.exist(path)) {
+        return file_.getGroup(path);
+    }
+    return file_.createGroup(path);
+}
+
+void H5Writer::writeRunParams(const RunParams& p) {
+    auto g = getOrCreateGroup("/metadata/run");
+
+    g.createAttribute("numSamples", p.numSamples);
+    g.createAttribute("thermSweeps", p.thermSweeps);
+    g.createAttribute("sweepsPerBlock", p.sweepsPerBlock);
+    g.createAttribute("measInterval", p.measInterval);
+    g.createAttribute("checkpointInterval", p.checkpointInterval);
+    g.createAttribute("numBins", p.numBins);
+    g.createAttribute("resume", static_cast<int>(p.resume));
+    g.createAttribute("outname", p.outname);
+    g.createAttribute("checkpointFile", p.checkpointFile);
+}
+
+void H5Writer::writeAccumulator(const ObservableAccumulator& acc) {
+    auto g = getOrCreateGroup("/observables");
+
+    for (const auto& [name, data] : acc.rawData()) {
+        auto stats = acc.stats(name);
+
+        auto obsGroup = g.createGroup(name);
+        obsGroup.createAttribute("mean", stats.mean);
+        obsGroup.createAttribute("error", stats.error);
+        obsGroup.createAttribute("count", static_cast<unsigned long long>(stats.count));
+
+        obsGroup.createDataSet("bin_sums", data.binSums);
+        obsGroup.createDataSet("bin_counts", data.binCounts);
+    }
+}
+
+void H5Writer::writeAccumulatorCheckpoint(const ObservableAccumulator& acc) {
+    auto g = getOrCreateGroup("/checkpoint/accumulators");
+
+    for (const auto& [name, data] : acc.rawData()) {
+        auto obsGroup = g.createGroup(name);
+        obsGroup.createDataSet("bin_sums", data.binSums);
+        obsGroup.createDataSet("bin_counts", data.binCounts);
+        obsGroup.createAttribute("total_sum", data.totalSum);
+        obsGroup.createAttribute("total_count", static_cast<unsigned long long>(data.totalCount));
+    }
+}
+
+int H5Reader::readInt(const std::string& path) const {
+    int value;
+    file_.getDataSet(path).read(value);
+    return value;
+}
+
+}
