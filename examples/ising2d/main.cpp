@@ -21,6 +21,20 @@ int main(int argc, char** argv) {
         Ising2D model(modelParams);
 
         mc::Runner<Ising2D> runner(model, runParams);
+
+
+        const int N = modelParams.L * modelParams.L;
+        const double beta = 1.0 / modelParams.T;
+
+        runner.addDerivedObservable("Cv", [N, beta](const auto& m) {
+            return N * beta * beta * (m.at("E2") - m.at("E") * m.at("E"));
+        });
+
+        runner.addDerivedObservable("chi_abs", [N, beta](const auto& m) {
+            return N * beta * (m.at("M2") - m.at("absM") * m.at("absM"));
+        });
+
+
         runner.run();
 
     } catch (const std::exception& e) {

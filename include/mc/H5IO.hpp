@@ -49,6 +49,13 @@ public:
     int readInt(const std::string& path) const;
 
     template <class T>
+    T readScalar(const std::string& path) const {
+        T value;
+        file_.getDataSet(path).read(value);
+        return value;
+    }
+
+    template <class T>
     void readVector(const std::string& path, std::vector<T>& data) const {
         file_.getDataSet(path).read(data);
     }

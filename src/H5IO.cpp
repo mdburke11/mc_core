@@ -45,10 +45,23 @@ void H5Writer::writeAccumulator(const ObservableAccumulator& acc) {
         obsGroup.createDataSet("bin_sums", data.binSums);
         obsGroup.createDataSet("bin_counts", data.binCounts);
     }
+
+    for (const auto& [name, f] : acc.derivedObservables()) {
+        auto stats = acc.derivedStats(name);
+
+        auto obsGroup = g.createGroup(name);
+        obsGroup.createAttribute("mean", stats.mean);
+        obsGroup.createAttribute("error", stats.error);
+        obsGroup.createAttribute("count", static_cast<unsigned long long>(stats.count));
+        obsGroup.createAttribute("derived", 1);
+    }
 }
 
 void H5Writer::writeAccumulatorCheckpoint(const ObservableAccumulator& acc) {
     auto g = getOrCreateGroup("/checkpoint/accumulators");
+
+    writeScalar("/checkpoint/accumulators/total_count",
+                static_cast<unsigned long long>(acc.totalCount()));
 
     for (const auto& [name, data] : acc.rawData()) {
         auto obsGroup = g.createGroup(name);
