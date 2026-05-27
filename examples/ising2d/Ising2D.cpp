@@ -9,6 +9,7 @@ Ising2DParams Ising2DParams::from(const mc::Params& p) {
     out.T = p.getDouble("T", out.T);
     out.J = p.getDouble("J", out.J);
     out.seed = static_cast<std::uint64_t>(p.getInt("seed", static_cast<int>(out.seed)));
+    out.init = p.getString("init", out.init);
     return out;
 }
 
@@ -22,8 +23,12 @@ Ising2D::Ising2D(const Ising2DParams& params)
       rng_(params.seed),
       siteDist_(0, N_ - 1) {
 
-    for (auto& s : spins_) {
-        s = uniform_(rng_) < 0.5 ? -1 : 1;
+    if (params.init == "ordered") {
+        std::fill(spins_.begin(), spins_.end(), 1);
+    } else {
+        for (auto& s : spins_) {
+            s = uniform_(rng_) < 0.5 ? -1 : 1;
+        }
     }
 }
 

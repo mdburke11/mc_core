@@ -18,6 +18,13 @@ int main(int argc, char** argv) {
         mc::RunParams runParams = mc::RunParams::from(params);
         Ising2DParams modelParams = Ising2DParams::from(params);
 
+        auto modelName = params.getString("model", "Ising2D");
+        if (modelName != "Ising2D") {
+            throw std::runtime_error("This executable only supports model = Ising2D");
+        }
+
+        params.validateUnused();
+
         Ising2D model(modelParams);
 
         mc::Runner<Ising2D> runner(model, runParams);

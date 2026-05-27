@@ -6,13 +6,15 @@ measInterval = 1
 checkpointInterval = 1000
 numBins = 100
 
-resume = true
+init = ordered
+resume = false
+
 outname = ising2d_output.h5
 checkpointFile = ising2d_checkpoint.h5
 
 # model params
 model = Ising2D
 L = 32
-T = 2.269185
+T = 0.2
 J = 1.0
 seed = 12345

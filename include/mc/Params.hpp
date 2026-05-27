@@ -2,6 +2,8 @@
 
 #include <string>
 #include <unordered_map>
+#include <set>
+#include <vector>
 
 namespace mc {
 
@@ -21,8 +23,13 @@ public:
     double getDouble(const std::string& key, double fallback) const;
     bool getBool(const std::string& key, bool fallback) const;
 
+    void validateUnused() const;
+    std::vector<std::string> unusedKeys() const;
+
 private:
     std::unordered_map<std::string, std::string> values_;
+    mutable std::set<std::string> usedKeys_;
+    void markUsed(const std::string& key) const;
 };
 
 struct RunParams {

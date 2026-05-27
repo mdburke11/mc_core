@@ -58,7 +58,38 @@ std::string Params::getString(const std::string& key) const {
     if (it == values_.end()) {
         throw std::runtime_error("Missing required parameter: " + key);
     }
+
+    markUsed(key);
     return it->second;
+}
+
+void Params::markUsed(const std::string& key) const {
+    usedKeys_.insert(key);
+}
+
+std::vector<std::string> Params::unusedKeys() const {
+    std::vector<std::string> out;
+
+    for (const auto& [key, value] : values_) {
+        if (usedKeys_.find(key) == usedKeys_.end()) {
+            out.push_back(key);
+        }
+    }
+
+    return out;
+}
+
+void Params::validateUnused() const {
+    auto unused = unusedKeys();
+
+    if (!unused.empty()) {
+        std::string msg = "Unused/unknown parameter(s):\n";
+        for (const auto& key : unused) {
+            msg += "  - " + key + "\n";
+        }
+
+        throw std::runtime_error(msg);
+    }
 }
 
 int Params::getInt(const std::string& key) const {

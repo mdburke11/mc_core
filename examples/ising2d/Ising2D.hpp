@@ -16,6 +16,7 @@ struct Ising2DParams {
     double T = 2.269185;
     double J = 1.0;
     std::uint64_t seed = 1234;
+    std::string init = "random";
 
     static Ising2DParams from(const mc::Params& p);
 };

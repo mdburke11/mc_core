@@ -37,7 +37,13 @@ public:
     }
 
     void addBatch(const ObservableBatch& batch) {
+        const std::size_t n = batch.size();
+
         for (const auto& [name, values] : batch.data()) {
+            if (values.size() != n) {
+                throw std::runtime_error("ObservableBatch has inconsistent observable lengths.");
+            }
+
             auto& obs = data_[name];
 
             if (obs.binSums.empty()) {
@@ -45,17 +51,17 @@ public:
                 obs.binCounts.assign(numBins_, 0);
             }
 
-            for (double x : values) {
-                std::size_t b = totalCount_ % numBins_;
+            for (std::size_t i = 0; i < n; ++i) {
+                std::size_t b = (totalCount_ + i) % numBins_;
 
-                obs.binSums[b] += x;
+                obs.binSums[b] += values[i];
                 obs.binCounts[b] += 1;
-                obs.totalSum += x;
+                obs.totalSum += values[i];
                 obs.totalCount += 1;
-
-                totalCount_++;
             }
         }
+
+        totalCount_ += n;
     }
 
     Stats stats(const std::string& name) const {
@@ -76,21 +82,49 @@ public:
     Stats derivedStats(const std::string& name) const {
         auto it = derived_.find(name);
         if (it == derived_.end()) {
-            throw std::runtime_error("Unknown derived observable: " + name);
+            throw std::runtime_error(
+                "Unknown derived observable: " + name
+            );
         }
 
-        const auto vals = derivedJackknifeValues(it->second);
+        const auto& f = it->second;
 
         Stats s;
-        s.count = vals.size();
-        if (vals.empty()) return s;
 
-        double mean = 0.0;
-        for (double x : vals) mean += x;
-        mean /= vals.size();
+        // ---------------------------------
+        // Full-data mean (what we report)
+        // ---------------------------------
 
-        s.mean = mean;
-        s.error = jackknifeError(vals);
+        std::unordered_map<std::string,double> fullMeans;
+
+        for (const auto& [obsName, obs] : data_) {
+
+            if (obs.totalCount == 0) {
+                return s;
+            }
+
+            fullMeans[obsName] =
+                obs.totalSum /
+                static_cast<double>(obs.totalCount);
+        }
+
+        s.mean = f(fullMeans);
+
+        // Report measurement count
+        if (!data_.empty()) {
+            s.count =
+                data_.begin()->second.totalCount;
+        }
+
+        // ---------------------------------
+        // Jackknife error only
+        // ---------------------------------
+
+        const auto jackVals =
+            derivedJackknifeValues(f);
+
+        s.error =
+            jackknifeError(jackVals);
 
         return s;
     }
