@@ -57,20 +57,30 @@ void H5Writer::writeAccumulator(const ObservableAccumulator& acc) {
     }
 }
 
-void H5Writer::writeAccumulatorCheckpoint(const ObservableAccumulator& acc) {
-    auto g = getOrCreateGroup("/checkpoint/accumulators");
+void H5Writer::writeAccumulatorCheckpoint(
+        const ObservableAccumulator& acc,
+        const std::string& basePath
+    ) {
+        auto g = getOrCreateGroup(basePath);
 
-    writeScalar("/checkpoint/accumulators/total_count",
-                static_cast<unsigned long long>(acc.totalCount()));
+        writeScalar(
+            basePath + "/total_count",
+            static_cast<unsigned long long>(acc.totalCount())
+        );
 
-    for (const auto& [name, data] : acc.rawData()) {
-        auto obsGroup = g.createGroup(name);
-        obsGroup.createDataSet("bin_sums", data.binSums);
-        obsGroup.createDataSet("bin_counts", data.binCounts);
-        obsGroup.createAttribute("total_sum", data.totalSum);
-        obsGroup.createAttribute("total_count", static_cast<unsigned long long>(data.totalCount));
+        for (const auto& [name, data] : acc.rawData()) {
+            auto obsPath = basePath + "/" + name;
+            auto obsGroup = getOrCreateGroup(obsPath);
+
+            obsGroup.createDataSet("bin_sums", data.binSums);
+            obsGroup.createDataSet("bin_counts", data.binCounts);
+            obsGroup.createAttribute("total_sum", data.totalSum);
+            obsGroup.createAttribute(
+                "total_count",
+                static_cast<unsigned long long>(data.totalCount)
+            );
+        }
     }
-}
 
 int H5Reader::readInt(const std::string& path) const {
     int value;

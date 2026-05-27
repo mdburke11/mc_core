@@ -32,7 +32,10 @@ public:
 
     void writeRunParams(const RunParams& params);
     void writeAccumulator(const ObservableAccumulator& acc);
-    void writeAccumulatorCheckpoint(const ObservableAccumulator& acc);
+    void writeAccumulatorCheckpoint(
+        const ObservableAccumulator& acc,
+        const std::string& basePath = "/checkpoint/accumulators"
+    );
 
     HighFive::File& file() { return file_; }
 

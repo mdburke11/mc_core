@@ -4,6 +4,7 @@
 #include "mc/ObservableBatch.hpp"
 #include "mc/Accumulator.hpp"
 #include "mc/H5IO.hpp"
+#include "mc/AccumulatorIO.hpp"
 
 #include <iostream>
 #include <utility>
@@ -113,42 +114,16 @@ private:
 
     void loadCheckpoint() {
         H5Reader reader(params_.checkpointFile);
-        completedSamples_ = reader.readInt("/checkpoint/runner/completed_samples");
-        auto modelGroup = reader.file().getGroup("/checkpoint/replicas/0/model");
-        
+
+        completedSamples_ =
+            reader.readInt("/checkpoint/runner/completed_samples");
+
+        auto modelGroup =
+            reader.file().getGroup("/checkpoint/replicas/0/model");
+
         model_.loadCheckpoint(modelGroup);
 
-        loadAccumulatorCheckpoint(reader);
-    }
-
-    void loadAccumulatorCheckpoint(H5Reader& reader) {
-        if (!reader.file().exist("/checkpoint/accumulators")) {
-            return;
-        }
-
-        auto total =
-            reader.readScalar<unsigned long long>("/checkpoint/accumulators/total_count");
-        accumulator_.setTotalCount(static_cast<std::size_t>(total));
-
-        auto g = reader.file().getGroup("/checkpoint/accumulators");
-
-        for (const auto& name : g.listObjectNames()) {
-            if (name == "total_count") continue;
-
-            auto obsGroup = g.getGroup(name);
-
-            ObservableData data;
-            obsGroup.getDataSet("bin_sums").read(data.binSums);
-            obsGroup.getDataSet("bin_counts").read(data.binCounts);
-
-            unsigned long long count;
-            obsGroup.getAttribute("total_count").read(count);
-            obsGroup.getAttribute("total_sum").read(data.totalSum);
-
-            data.totalCount = static_cast<std::size_t>(count);
-
-            accumulator_.rawDataMutable()[name] = std::move(data);
-        }
+        loadAccumulatorCheckpoint(reader, accumulator_);
     }
 
     ModelT& model_;
@@ -158,4 +133,4 @@ private:
     int completedSamples_ = 0;
 };
 
-}
+} // namespace mc

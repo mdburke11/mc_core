@@ -5,6 +5,7 @@
 #include "mc/Runner.hpp"
 #include "mc/H5IO.hpp"
 #include "mc/TemperatureScanRunner.hpp"
+#include "mc/AccumulatorIO.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -88,14 +89,24 @@ public:
 
         initialize();
 
+        int completed = 0;
+
         if (runParams_.resume) {
-            // We can add resume after first successful non-resume PT test.
-            std::cout << "PT resume not implemented yet in this first pass.\n";
-        } else {
+            loadCheckpoint(completed);
+
+            if (completed >= runParams_.numSamples) {
+                std::cout
+                    << "Checkpoint already satisfies requested "
+                    << "numSamples.\n";
+
+                saveOutput();
+                return;
+            }
+        }
+        else {
             thermalize();
         }
 
-        int completed = 0;
         BlockSpec block;
         block.sweepsPerBlock = runParams_.sweepsPerBlock;
         block.measInterval = runParams_.measInterval;
@@ -328,7 +339,93 @@ private:
             replicas_[r].model.saveCheckpoint(g);
         }
 
-        // Accumulator checkpointing per temperature slot comes next.
+        for (int t = 0; t < static_cast<int>(tempSlots_.size()); ++t) {
+            writer.writeAccumulatorCheckpoint(
+                tempSlots_[t].acc,
+                "/checkpoint/temp_slots/" +
+                std::to_string(t) +
+                "/accumulators"
+            );
+        }
+    }
+
+    void loadCheckpoint(int& completed) {
+        H5Reader reader(runParams_.checkpointFile);
+
+        completed =
+            reader.readInt("/checkpoint/runner/completed_samples");
+
+        reader.readVector(
+            "/checkpoint/runner/temp_to_replica",
+            temp_to_replica_
+        );
+
+        reader.readVector(
+            "/checkpoint/runner/replica_to_temp",
+            replica_to_temp_
+        );
+
+        reader.readVector(
+            "/checkpoint/runner/swap_attempts",
+            swapAttempts_
+        );
+
+        reader.readVector(
+            "/checkpoint/runner/swap_accepts",
+            swapAccepts_
+        );
+
+        // --------------------
+        // Replica model states
+        // --------------------
+
+        for (int r = 0; r < static_cast<int>(replicas_.size()); ++r) {
+
+            auto g =
+                reader.file().getGroup(
+                    "/checkpoint/replicas/" +
+                    std::to_string(r) +
+                    "/model"
+                );
+
+            replicas_[r].model.loadCheckpoint(g);
+        }
+
+        // --------------------
+        // Temperature-slot accumulators
+        // --------------------
+
+        for (int t = 0; t < static_cast<int>(tempSlots_.size()); ++t) {
+
+            loadAccumulatorCheckpoint(
+                reader,
+                tempSlots_[t].acc,
+                "/checkpoint/temp_slots/" +
+                std::to_string(t) +
+                "/accumulators"
+            );
+        }
+
+        // --------------------
+        // Restore temperatures
+        // --------------------
+
+        for (int r = 0; r < static_cast<int>(replicas_.size()); ++r) {
+
+            int t = replica_to_temp_[r];
+
+            replicas_[r].tempIndex = t;
+            replicas_[r].model.setTemperature(
+                tempSlots_[t].T
+            );
+        }
+
+        std::cout
+            << "Resumed PT checkpoint at sample "
+            << completed
+            << " / "
+            << runParams_.numSamples
+            << "\n";
     }
 
     FactoryT factory_;

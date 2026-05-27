@@ -4,6 +4,7 @@
 #include "mc/Runner.hpp"
 #include "mc/Accumulator.hpp"
 #include "mc/H5IO.hpp"
+#include "mc/AccumulatorIO.hpp"
 
 #include <cmath>
 #include <functional>
@@ -197,42 +198,6 @@ public:
     }
 
 private:
-
-    void loadAccumulatorCheckpoint(
-        H5Reader& reader,
-        ObservableAccumulator& acc
-    ) {
-        if (!reader.file().exist("/checkpoint/accumulators")) {
-            return;
-        }
-
-        auto total =
-            reader.readScalar<unsigned long long>(
-                "/checkpoint/accumulators/total_count"
-            );
-
-        acc.setTotalCount(static_cast<std::size_t>(total));
-
-        auto g = reader.file().getGroup("/checkpoint/accumulators");
-
-        for (const auto& name : g.listObjectNames()) {
-            if (name == "total_count") continue;
-
-            auto obsGroup = g.getGroup(name);
-
-            ObservableData data;
-            obsGroup.getDataSet("bin_sums").read(data.binSums);
-            obsGroup.getDataSet("bin_counts").read(data.binCounts);
-
-            unsigned long long count;
-            obsGroup.getAttribute("total_count").read(count);
-            obsGroup.getAttribute("total_sum").read(data.totalSum);
-
-            data.totalCount = static_cast<std::size_t>(count);
-
-            acc.rawDataMutable()[name] = std::move(data);
-        }
-    }
 
     void loadTempDataSoFar(H5Reader& reader) {
         if (!reader.file().exist("/checkpoint/temp_data_so_far")) {

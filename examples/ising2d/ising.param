@@ -1,11 +1,11 @@
-numSamples = 5000
+numSamples = 50000
 thermSweeps = 1000
 sweepsPerBlock = 10
 measInterval = 1
 checkpointInterval = 1000
 numBins = 50
 
-resume = false
+resume = true
 outname = ising2d_pt.h5
 checkpointFile = ising2d_pt_checkpoint.h5
 
