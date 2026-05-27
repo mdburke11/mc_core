@@ -1,5 +1,6 @@
 #include "mc/Params.hpp"
 #include "mc/TemperatureScanRunner.hpp"
+#include "mc/ParallelTemperingRunnerCPU.hpp"
 
 #include "Ising2D.hpp"
 
@@ -16,8 +17,8 @@ int main(int argc, char** argv) {
         mc::Params params(argv[1]);
 
         mc::RunParams runParams = mc::RunParams::from(params);
-        mc::TemperatureScanParams scanParams =
-            mc::TemperatureScanParams::from(params);
+        mc::ParallelTemperingParams ptParams = mc::ParallelTemperingParams::from(params);
+        mc::TemperatureScanParams scanParams = mc::TemperatureScanParams::from(params);
 
         Ising2DParams modelParams = Ising2DParams::from(params);
 
@@ -36,8 +37,8 @@ int main(int argc, char** argv) {
             return Ising2D(pT);
         };
 
-        mc::TemperatureScanRunner<Ising2D, decltype(factory)>
-            runner(factory, runParams, scanParams);
+        // mc::TemperatureScanRunner<Ising2D, decltype(factory)> runner(factory, runParams, scanParams);
+        mc::ParallelTemperingRunnerCPU<Ising2D, decltype(factory)> runner(factory, runParams, scanParams, ptParams);
 
         const int N = modelParams.L * modelParams.L;
 

@@ -1,26 +1,25 @@
-# runner params
-numSamples = 10000
+numSamples = 5000
 thermSweeps = 1000
 sweepsPerBlock = 10
 measInterval = 1
 checkpointInterval = 1000
-numBins = 100
+numBins = 50
 
-# Checkpointing information
-resume = true
-outname = ising2d_output.h5
-checkpointFile = ising2d_checkpoint.h5
+resume = false
+outname = ising2d_pt.h5
+checkpointFile = ising2d_pt_checkpoint.h5
 
-# Temperature scan params
 T0 = 1.5
 Tf = 3.5
 NT = 16
 T_mode = linear
 
-# model params
+exchInterval = 1
+swapSeed = 9876
+
 model = Ising2D
 L = 24
-T = 0.2
+T = 2.0
 J = 1.0
 seed = 12345
 init = random

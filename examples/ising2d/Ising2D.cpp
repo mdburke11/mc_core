@@ -117,6 +117,15 @@ double Ising2D::magnetization() const {
     return M;
 }
 
+double Ising2D::energy() const {
+    return totalEnergy();
+}
+
+void Ising2D::setTemperature(double T) {
+    T_ = T;
+    beta_ = 1.0 / T_;
+}
+
 void Ising2D::saveCheckpoint(HighFive::Group& g) const {
     g.createDataSet("spins", spins_);
     g.createDataSet("L", L_);

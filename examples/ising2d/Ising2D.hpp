@@ -34,7 +34,11 @@ public:
 
     void writeMetadata(HighFive::Group& g) const;
 
+    double energy() const;
+    void setTemperature(double T);
+
 private:
+
     int index(int x, int y) const;
     int spin(int x, int y) const;
 

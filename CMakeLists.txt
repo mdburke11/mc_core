@@ -38,6 +38,39 @@ target_link_libraries(mc_core
         HDF5::HDF5
 )
 
+# --------------------------
+# OpenMP
+# --------------------------
+
+if(APPLE)
+    set(LIBOMP_ROOT "/opt/homebrew/opt/libomp")
+
+    if(EXISTS "${LIBOMP_ROOT}")
+        set(OpenMP_C_FLAGS
+            "-Xpreprocessor -fopenmp -I${LIBOMP_ROOT}/include"
+        )
+        set(OpenMP_CXX_FLAGS
+            "-Xpreprocessor -fopenmp -I${LIBOMP_ROOT}/include"
+        )
+        set(OpenMP_C_LIB_NAMES "omp")
+        set(OpenMP_CXX_LIB_NAMES "omp")
+        set(OpenMP_omp_LIBRARY
+            "${LIBOMP_ROOT}/lib/libomp.dylib"
+        )
+    endif()
+endif()
+
+find_package(OpenMP)
+
+if(OpenMP_CXX_FOUND)
+    message(STATUS "OpenMP found")
+
+    target_link_libraries(mc_core PUBLIC OpenMP::OpenMP_CXX)
+    target_compile_definitions(mc_core PUBLIC MC_HAS_OPENMP)
+else()
+    message(STATUS "OpenMP not found; building without OpenMP")
+endif()
+
 target_compile_features(mc_core PUBLIC cxx_std_17)
 
 add_subdirectory(examples/ising2d)
