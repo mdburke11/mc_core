@@ -99,17 +99,24 @@ private:
     void saveCheckpoint() const {
         std::cout << "Saving checkpoint at sample "
           << completedSamples_ << "\n";
-          
+
         H5Writer writer(params_.checkpointFile);
-        writer.writeScalar("/checkpoint/completed_samples", completedSamples_);
-        model_.saveCheckpoint(writer);
+        writer.writeScalar("/checkpoint/runner/completed_samples", completedSamples_);
+
+        auto modelGroup =
+            writer.file().createGroup("/checkpoint/replicas/0/model");
+
+        model_.saveCheckpoint(modelGroup);
+
         writer.writeAccumulatorCheckpoint(accumulator_);
     }
 
     void loadCheckpoint() {
         H5Reader reader(params_.checkpointFile);
-        completedSamples_ = reader.readInt("/checkpoint/completed_samples");
-        model_.loadCheckpoint(reader);
+        completedSamples_ = reader.readInt("/checkpoint/runner/completed_samples");
+        auto modelGroup = reader.file().getGroup("/checkpoint/replicas/0/model");
+        
+        model_.loadCheckpoint(modelGroup);
 
         loadAccumulatorCheckpoint(reader);
     }

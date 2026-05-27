@@ -29,8 +29,8 @@ public:
     void runBlock(const mc::BlockSpec& block);
     mc::ObservableBatch fetchObservables();
 
-    void saveCheckpoint(mc::H5Writer& writer) const;
-    void loadCheckpoint(mc::H5Reader& reader);
+    void saveCheckpoint(HighFive::Group& g) const;
+    void loadCheckpoint(const HighFive::Group& g);
 
     void writeMetadata(HighFive::Group& g) const;
 

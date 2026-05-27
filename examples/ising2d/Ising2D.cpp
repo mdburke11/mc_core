@@ -117,22 +117,25 @@ double Ising2D::magnetization() const {
     return M;
 }
 
-void Ising2D::saveCheckpoint(mc::H5Writer& writer) const {
-    writer.writeVector("/checkpoint/model/spins", spins_);
-    writer.writeScalar("/checkpoint/model/L", L_);
-    writer.writeScalar("/checkpoint/model/T", T_);
-    writer.writeScalar("/checkpoint/model/J", J_);
+void Ising2D::saveCheckpoint(HighFive::Group& g) const {
+    g.createDataSet("spins", spins_);
+    g.createDataSet("L", L_);
+    g.createDataSet("T", T_);
+    g.createDataSet("J", J_);
 
     std::ostringstream ss;
     ss << rng_;
-    writer.writeScalar("/checkpoint/model/rng_state", ss.str());
+    g.createDataSet("rng_state", ss.str());
 }
 
-void Ising2D::loadCheckpoint(mc::H5Reader& reader) {
-    reader.readVector("/checkpoint/model/spins", spins_);
+void Ising2D::loadCheckpoint(const HighFive::Group& g) {
+    g.getDataSet("spins").read(spins_);
+    g.getDataSet("T").read(T_);
+    beta_ = 1.0 / T_;
+    g.getDataSet("J").read(J_);
 
     std::string rngState;
-    reader.file().getDataSet("/checkpoint/model/rng_state").read(rngState);
+    g.getDataSet("rng_state").read(rngState);
 
     std::istringstream ss(rngState);
     ss >> rng_;
