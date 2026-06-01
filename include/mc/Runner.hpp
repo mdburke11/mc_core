@@ -5,6 +5,7 @@
 #include "mc/Accumulator.hpp"
 #include "mc/H5IO.hpp"
 #include "mc/AccumulatorIO.hpp"
+#include "mc/ModelHooks.hpp"
 
 #include <iostream>
 #include <utility>

@@ -14,6 +14,7 @@
 #include <vector>
 #include <atomic>
 #include <csignal>
+#include <algorithm>
 
 namespace mc {
 
@@ -22,6 +23,7 @@ struct TemperatureScanParams {
     double Tf = 4.0;
     int NT = 16;
     std::string T_mode = "linear";
+    std::string annealDirection = "auto"; // "cooling", "heating", "auto"
 
     static TemperatureScanParams from(const Params& p) {
         TemperatureScanParams out;
@@ -29,6 +31,7 @@ struct TemperatureScanParams {
         out.Tf = p.getDouble("Tf", out.Tf);
         out.NT = p.getInt("NT", out.NT);
         out.T_mode = p.getString("T_mode", out.T_mode);
+        out.annealDirection = p.getString("annealDirection", out.annealDirection);
         return out;
     }
 };
@@ -56,6 +59,22 @@ inline std::vector<double> makeTemperatureGrid(const TemperatureScanParams& p) {
         }
     } else {
         throw std::runtime_error("Unknown T_mode: " + p.T_mode);
+    }
+
+    if (p.annealDirection == "cooling") {
+        if (T.front() < T.back()) {
+            std::reverse(T.begin(), T.end());
+        }
+    } else if (p.annealDirection == "heating") {
+        if (T.front() > T.back()) {
+            std::reverse(T.begin(), T.end());
+        }
+    } else if (p.annealDirection == "auto") {
+        // keep user-provided T0 -> Tf direction
+    } else {
+        throw std::runtime_error(
+            "Unknown annealDirection: " + p.annealDirection
+        );
     }
 
     return T;

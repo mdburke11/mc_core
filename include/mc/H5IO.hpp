@@ -30,6 +30,16 @@ public:
         model.writeMetadata(g);
     }
 
+    template <class T>
+    void writeArray(
+        const std::string& path,
+        const std::vector<T>& data,
+        const std::vector<std::size_t>& shape
+    ) {
+        HighFive::DataSpace space(shape);
+        file_.createDataSet<T>(path, space).write(data);
+    }
+
     void writeRunParams(const RunParams& params);
     void writeAccumulator(const ObservableAccumulator& acc);
     void writeAccumulatorCheckpoint(
