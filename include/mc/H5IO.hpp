@@ -16,11 +16,13 @@ public:
 
     template <class T>
     void writeScalar(const std::string& path, const T& value) {
+        getOrCreateGroup(parentPath(path));
         file_.createDataSet<T>(path, HighFive::DataSpace::From(value)).write(value);
     }
 
     template <class T>
     void writeVector(const std::string& path, const std::vector<T>& data) {
+        getOrCreateGroup(parentPath(path));
         file_.createDataSet<T>(path, HighFive::DataSpace::From(data)).write(data);
     }
 

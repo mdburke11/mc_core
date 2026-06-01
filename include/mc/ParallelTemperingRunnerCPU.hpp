@@ -91,9 +91,10 @@ public:
         initialize();
 
         int completed = 0;
+        int ptStep = 0;
 
         if (runParams_.resume) {
-            loadCheckpoint(completed);
+            loadCheckpoint(completed, ptStep);
 
             if (completed >= runParams_.numSamples) {
                 std::cout
@@ -108,11 +109,15 @@ public:
             thermalize();
         }
 
+        // Make sure the next checkpoint is ahead of the resumed sample count.
+        nextCheckpoint = runParams_.checkpointInterval;
+        while (nextCheckpoint <= completed) {
+            nextCheckpoint += runParams_.checkpointInterval;
+        }
+
         BlockSpec block;
         block.sweepsPerBlock = runParams_.sweepsPerBlock;
         block.measInterval = runParams_.measInterval;
-
-        int ptStep = 0;
 
         while (completed < runParams_.numSamples) {
             runAllReplicas(block);
@@ -121,17 +126,18 @@ public:
             completed += static_cast<int>(n);
 
             ptStep++;
+
             if (ptStep % ptParams_.exchInterval == 0) {
                 attemptSwaps(ptStep);
             }
 
             if (completed % runParams_.checkpointInterval == 0) {
-                saveCheckpoint(completed);
+                saveCheckpoint(completed, ptStep);
             }
 
             if (stopRequested.load()) {
                 std::cout << "Stop signal received. Saving PT checkpoint.\n";
-                saveCheckpoint(completed);
+                saveCheckpoint(completed, ptStep);
                 return;
             }
 
@@ -200,23 +206,29 @@ private:
         }
     }
 
-    int measureAllTemperatureSlots() {
+    std::size_t measureAllTemperatureSlots() {
         const int NT = static_cast<int>(tempSlots_.size());
+        std::size_t n = 0;
 
         for (int t = 0; t < NT; ++t) {
             int r = temp_to_replica_[t];
 
             auto batch = replicas_[r].model.fetchObservables();
+
+            if (t == 0) {
+                n = batch.size();
+            }
+
             tempSlots_[t].acc.addBatch(batch);
         }
 
-        return /*BATCHSIZE?!?!?*/
+        return n;
     }
 
-    void attemptSwaps(int completed) {
+    void attemptSwaps(int ptStep) {
         const int NT = static_cast<int>(tempSlots_.size());
 
-        int parity = (completed / ptParams_.exchInterval) % 2;
+        int parity = (ptStep / ptParams_.exchInterval) % 2;
         int start = parity;
 
         std::uniform_real_distribution<double> uni(0.0, 1.0);
@@ -298,7 +310,7 @@ private:
         writer.writeVector("/pt/swap_accepts", swapAccepts_);
     }
 
-    void saveCheckpoint(int completed) const {
+    void saveCheckpoint(int completed, int ptStep) const {
         std::cout << "Saving PT checkpoint at sample "
                   << completed << "\n";
 
@@ -307,6 +319,11 @@ private:
         writer.writeScalar(
             "/checkpoint/runner/completed_samples",
             completed
+        );
+
+        writer.writeScalar(
+            "/checkpoint/runner/pt_step",
+            ptStep
         );
 
         writer.writeVector(
@@ -358,11 +375,14 @@ private:
         writer.writeScalar("/checkpoint/runner/swap_rng_state", ss.str());
     }
 
-    void loadCheckpoint(int& completed) {
+    void loadCheckpoint(int& completed, int& ptStep) {
         H5Reader reader(runParams_.checkpointFile);
 
         completed =
             reader.readInt("/checkpoint/runner/completed_samples");
+
+        ptStep =
+            reader.readInt("/checkpoint/runner/pt_step");
 
         reader.readVector(
             "/checkpoint/runner/temp_to_replica",
@@ -464,6 +484,8 @@ private:
     std::unordered_map<std::string, TemperatureDerivedFunction> derived_;
 
     std::mt19937_64 rng_;
+
+    int nextCheckpoint = 0;
 };
 
 }
