@@ -10,11 +10,32 @@ H5Writer::H5Writer(const std::string& filename)
 H5Reader::H5Reader(const std::string& filename)
     : file_(filename, HighFive::File::ReadOnly) {}
 
-HighFive::Group H5Writer::getOrCreateGroup(const std::string& path) {
-    if (file_.exist(path)) {
-        return file_.getGroup(path);
+HighFive::Group H5Writer::getOrCreateGroup(
+    const std::string& path
+) {
+    if (path.empty() || path == "/") {
+        return file_.getGroup("/");
     }
-    return file_.createGroup(path);
+
+    std::string current;
+
+    for (std::size_t i = 1; i < path.size(); ++i) {
+
+        if (path[i] == '/') {
+
+            if (!file_.exist(current)) {
+                file_.createGroup(current);
+            }
+        }
+
+        current += path[i];
+    }
+
+    if (!file_.exist(path)) {
+        file_.createGroup(path);
+    }
+
+    return file_.getGroup(path);
 }
 
 void H5Writer::writeRunParams(const RunParams& p) {

@@ -103,6 +103,12 @@ public:
         derived_[name] = std::move(f);
     }
 
+    void addDerivedToAccumulator(ObservableAccumulator& acc, double T) {
+        for (const auto& [name, makeFunc] : derived_) {
+            acc.addDerivedObservable(name, makeFunc(T));
+        }
+    }
+
     void run() {
 
         std::signal(SIGINT, signalHandler);
@@ -118,6 +124,7 @@ public:
 
             ModelT model = factory_(T);
             ObservableAccumulator acc(runParams_.numBins);
+            addDerivedToAccumulator(acc, T);
 
             int completed = 0;
 
@@ -145,10 +152,7 @@ public:
                 // Rebuild model and accumulator at the correct T
                 model = factory_(T);
                 acc = ObservableAccumulator(runParams_.numBins);
-
-                for (const auto& [name, makeFunc] : derived_) {
-                    acc.addDerivedObservable(name, makeFunc(T));
-                }
+                addDerivedToAccumulator(acc, T);
 
                 // Now load full checkpoint into correctly constructed objects
                 loadCheckpoint(loadedTi, loadedCompleted, model, acc);

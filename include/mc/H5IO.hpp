@@ -36,7 +36,11 @@ public:
         const std::vector<T>& data,
         const std::vector<std::size_t>& shape
     ) {
+
+        getOrCreateGroup(parentPath(path));
+
         HighFive::DataSpace space(shape);
+
         file_.createDataSet<T>(path, space).write(data);
     }
 
@@ -50,6 +54,15 @@ public:
     HighFive::File& file() { return file_; }
 
 private:
+
+    std::string parentPath(const std::string& path) const {
+        auto pos = path.find_last_of('/');
+        if (pos == std::string::npos || pos == 0) {
+            return "/";
+        }
+        return path.substr(0, pos);
+    }
+
     HighFive::Group getOrCreateGroup(const std::string& path);
 
     HighFive::File file_;

@@ -11,9 +11,9 @@ A model used with mc::Runner<ModelT> must provide:
 
     mc::ObservableBatch fetchObservables();
 
-    void saveCheckpoint(mc::H5Writer& writer) const;
+    void saveCheckpoint(HighFive::Group& group) const;
 
-    void loadCheckpoint(mc::H5Reader& reader);
+    void loadCheckpoint(const HighFive::Group& group);
 
     void writeMetadata(HighFive::Group& group) const;
 
@@ -24,6 +24,10 @@ The model owns:
     - RNG state
     - model-specific checkpoint data
     - model-specific metadata
+
+PT-compatible models need to have 
+double energy() const;
+void setTemperature(double T);
 
 The runner owns:
     - sampling protocol

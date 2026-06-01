@@ -74,7 +74,7 @@ public:
         s.mean = obs.totalSum / static_cast<double>(obs.totalCount);
 
         auto vals = primaryBinMeans(name);
-        s.error = jackknifeError(vals);
+        s.error = binMeanError(vals);
 
         return s;
     }
@@ -189,6 +189,23 @@ public:
         }
 
         return std::sqrt((n - 1.0) / n * var);
+    }
+
+    static double binMeanError(const std::vector<double>& binMeans) {
+        const std::size_t n = binMeans.size();
+        if (n <= 1) return 0.0;
+
+        double mean = 0.0;
+        for (double x : binMeans) mean += x;
+        mean /= static_cast<double>(n);
+
+        double var = 0.0;
+        for (double x : binMeans) {
+            double dx = x - mean;
+            var += dx * dx;
+        }
+
+        return std::sqrt(var / (n * (n - 1.0)));
     }
 
     const auto& rawData() const {

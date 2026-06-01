@@ -16,6 +16,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <sstream>
 
 #ifdef MC_HAS_OPENMP
 #include <omp.h>
@@ -111,15 +112,17 @@ public:
         block.sweepsPerBlock = runParams_.sweepsPerBlock;
         block.measInterval = runParams_.measInterval;
 
+        int ptStep = 0;
+
         while (completed < runParams_.numSamples) {
             runAllReplicas(block);
 
-            measureAllTemperatureSlots();
+            std::size_t n = measureAllTemperatureSlots();
+            completed += static_cast<int>(n);
 
-            completed += 1;
-
-            if (completed % ptParams_.exchInterval == 0) {
-                attemptSwaps(completed);
+            ptStep++;
+            if (ptStep % ptParams_.exchInterval == 0) {
+                attemptSwaps(ptStep);
             }
 
             if (completed % runParams_.checkpointInterval == 0) {
@@ -197,7 +200,7 @@ private:
         }
     }
 
-    void measureAllTemperatureSlots() {
+    int measureAllTemperatureSlots() {
         const int NT = static_cast<int>(tempSlots_.size());
 
         for (int t = 0; t < NT; ++t) {
@@ -206,6 +209,8 @@ private:
             auto batch = replicas_[r].model.fetchObservables();
             tempSlots_[t].acc.addBatch(batch);
         }
+
+        return /*BATCHSIZE?!?!?*/
     }
 
     void attemptSwaps(int completed) {
@@ -347,6 +352,10 @@ private:
                 "/accumulators"
             );
         }
+
+        std::ostringstream ss;
+        ss << rng_;
+        writer.writeScalar("/checkpoint/runner/swap_rng_state", ss.str());
     }
 
     void loadCheckpoint(int& completed) {
@@ -419,6 +428,14 @@ private:
                 tempSlots_[t].T
             );
         }
+
+        std::string rngState;
+        reader.file().getDataSet("/checkpoint/runner/swap_rng_state").read(rngState);
+
+        std::istringstream ss(rngState);
+        ss >> rng_;
+
+
 
         std::cout
             << "Resumed PT checkpoint at sample "

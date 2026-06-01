@@ -5,7 +5,7 @@ measInterval = 1
 checkpointInterval = 1000
 numBins = 50
 
-resume = true
+resume = false
 outname = ising2d_pt.h5
 checkpointFile = ising2d_pt_checkpoint.h5
 
