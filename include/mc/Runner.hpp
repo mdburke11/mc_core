@@ -96,6 +96,7 @@ private:
         writer.writeRunParams(params_);
         writer.writeModelMetadata(model_);
         writer.writeAccumulator(accumulator_);
+        writeExtraObservablesIfAvailable(model_, writer, 0);
     }
 
     void saveCheckpoint() const {
