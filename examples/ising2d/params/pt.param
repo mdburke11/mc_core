@@ -1,0 +1,36 @@
+# ==================================================
+# Parallel Tempering
+# ==================================================
+
+runMode = pt
+
+numSamples = 50000
+thermSweeps = 10000
+sweepsPerBlock = 10
+measInterval = 1
+checkpointInterval = 5000
+numBins = 20
+
+resume = false
+
+outname = pt_output.h5
+checkpointFile = pt_checkpoint.h5
+
+# replica temperatures
+
+T0 = 1.5
+Tf = 3.5
+NT = 16
+T_mode = linear
+
+exchInterval = 1
+swapSeed = 9876
+
+model = Ising2D
+
+L = 32
+T = 2.269185
+J = 1.0
+
+seed = 12345
+init = random

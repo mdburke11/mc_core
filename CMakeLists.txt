@@ -73,7 +73,8 @@ endif()
 
 target_compile_features(mc_core PUBLIC cxx_std_17)
 
-add_subdirectory(examples/ising2d)
+# Examples are built as standalone projects against the installed mc_core.
+#add_subdirectory(examples/ising2d)
 
 install(TARGETS mc_core
     EXPORT MonteCarloCoreTargets

@@ -1,0 +1,26 @@
+# ==================================================
+# Single temperature simulation
+# ==================================================
+
+runMode = single
+
+numSamples = 100000
+thermSweeps = 10000
+sweepsPerBlock = 10
+measInterval = 1
+checkpointInterval = 10000
+numBins = 20
+
+resume = false
+
+outname = single_output.h5
+checkpointFile = single_checkpoint.h5
+
+model = Ising2D
+
+L = 32
+T = 2.269185
+J = 1.0
+
+seed = 12345
+init = random

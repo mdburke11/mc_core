@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 namespace mc {
 
@@ -38,12 +39,23 @@ public:
         const std::vector<T>& data,
         const std::vector<std::size_t>& shape
     ) {
-
         getOrCreateGroup(parentPath(path));
 
-        HighFive::DataSpace space(shape);
+        std::size_t expected = 1;
+        for (auto n : shape) {
+            expected *= n;
+        }
 
-        file_.createDataSet<T>(path, space).write(data);
+        if (expected != data.size()) {
+            throw std::runtime_error(
+                "writeArray shape does not match flattened data size for path: " + path
+            );
+        }
+
+        HighFive::DataSpace space(shape);
+        auto dset = file_.createDataSet<T>(path, space);
+
+        dset.write_raw(data.data());
     }
 
     void writeRunParams(const RunParams& params);
