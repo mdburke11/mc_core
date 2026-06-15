@@ -6,6 +6,7 @@
 #include "mc/H5IO.hpp"
 #include "mc/TemperatureScanRunner.hpp"
 #include "mc/AccumulatorIO.hpp"
+#include "mc/ArrayObservable.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -17,6 +18,9 @@
 #include <unordered_map>
 #include <vector>
 #include <sstream>
+#include <functional>
+#include <stdexcept>
+#include <highfive/H5File.hpp>
 
 #ifdef MC_HAS_OPENMP
 #include <omp.h>
@@ -51,11 +55,19 @@ struct PTTempSlot {
     double beta = 1.0;
     ObservableAccumulator acc;
 
+    std::unordered_map<std::string, ArrayAccumulator> arrays;
+
+    void addArrayBatch(const ArrayObservableBatch& batch) {
+        arrays[batch.name].add(batch);
+    }
+
     PTTempSlot(double T_, int numBins)
         : T(T_),
           beta(1.0 / T_),
           acc(numBins) {}
 };
+
+
 
 template <class ModelT, class FactoryT>
 class ParallelTemperingRunnerCPU {
@@ -131,8 +143,12 @@ public:
                 attemptSwaps(ptStep);
             }
 
-            if (completed % runParams_.checkpointInterval == 0) {
+            if (completed >= nextCheckpoint) {
                 saveCheckpoint(completed, ptStep);
+
+                while (nextCheckpoint <= completed) {
+                    nextCheckpoint += runParams_.checkpointInterval;
+                }
             }
 
             if (stopRequested.load()) {
@@ -220,6 +236,10 @@ private:
             }
 
             tempSlots_[t].acc.addBatch(batch);
+
+            for (const auto& arrBatch : replicas_[r].model.fetchArrayObservables()) {
+                tempSlots_[t].addArrayBatch(arrBatch);
+            }
         }
 
         return n;
@@ -308,6 +328,34 @@ private:
 
         writer.writeVector("/pt/swap_attempts", swapAttempts_);
         writer.writeVector("/pt/swap_accepts", swapAccepts_);
+
+        for (int t = 0; t < static_cast<int>(tempSlots_.size()); ++t) {
+            bool hasArrays = false;
+            for (const auto& [name, acc] : slot.arrays) {
+                if (acc.count > 0) {
+                    hasArrays = true;
+                    break;
+                }
+            }
+
+            if (!hasArrays) {
+                continue;
+            }
+
+            const std::string tbase =
+                "/array_observables/T" + std::to_string(t);
+
+            writer.writeScalar(tbase + "/T", slot.T);
+
+            for (const auto& [name, acc] : slot.arrays) {
+                if (acc.count == 0) continue;
+
+                const std::string base = tbase + "/" + name;
+
+                writer.writeArray(base, acc.mean(), acc.shape);
+                writer.writeScalar(base + "_count", acc.count);
+            }
+        }
     }
 
     void saveCheckpoint(int completed, int ptStep) const {
@@ -369,6 +417,8 @@ private:
                 "/accumulators"
             );
         }
+
+        writeArrayAccumulatorCheckpoint(writer);
 
         std::ostringstream ss;
         ss << rng_;
@@ -449,6 +499,8 @@ private:
             );
         }
 
+        loadArrayAccumulatorCheckpoint(reader);
+
         std::string rngState;
         reader.file().getDataSet("/checkpoint/runner/swap_rng_state").read(rngState);
 
@@ -463,6 +515,87 @@ private:
             << " / "
             << runParams_.numSamples
             << "\n";
+    }
+    
+    void writeArrayAccumulatorCheckpoint(H5Writer& writer) const {
+        for (int t = 0; t < static_cast<int>(tempSlots_.size()); ++t) {
+            const auto& slot = tempSlots_[t];
+
+            for (const auto& [name, acc] : slot.arrays) {
+                const std::string base =
+                    "/checkpoint/array_observables/T" +
+                    std::to_string(t) + "/" + name;
+
+                writer.writeScalar(base + "/count", acc.count);
+
+                if (acc.count > 0 && !acc.sum.empty()) {
+                    writer.writeArray(base + "/sum", acc.sum, acc.shape);
+
+                    std::vector<unsigned long long> shape(
+                        acc.shape.begin(),
+                        acc.shape.end()
+                    );
+
+                    writer.writeVector(base + "/shape", shape);
+                }
+            }
+        }
+    }
+
+    void loadArrayAccumulatorCheckpoint(H5Reader& reader) {
+        const std::string root = "/checkpoint/array_observables";
+
+        if (!reader.file().exist(root)) {
+            return;
+        }
+
+        for (int t = 0; t < static_cast<int>(tempSlots_.size()); ++t) {
+            const std::string troot = root + "/T" + std::to_string(t);
+
+            if (!reader.file().exist(troot)) {
+                continue;
+            }
+
+            std::function<void(const std::string&, const std::string&)> visit;
+
+            visit = [&](const std::string& h5Path, const std::string& logicalName) {
+                auto g = reader.file().getGroup(h5Path);
+
+                if (g.exist("count")) {
+                    ArrayAccumulator acc;
+
+                    acc.count =
+                        reader.readScalar<unsigned long long>(h5Path + "/count");
+
+                    if (acc.count > 0 && reader.file().exist(h5Path + "/sum")) {
+                        reader.file().getDataSet(h5Path + "/sum").read(acc.sum);
+
+                        std::vector<unsigned long long> shape;
+                        reader.file().getDataSet(h5Path + "/shape").read(shape);
+
+                        acc.shape.assign(shape.begin(), shape.end());
+                    }
+
+                    tempSlots_[t].arrays[logicalName] = std::move(acc);
+                    return;
+                }
+
+                for (const auto& child : g.listObjectNames()) {
+                    const std::string childH5 = h5Path + "/" + child;
+                    const std::string childLogical =
+                        logicalName.empty() ? child : logicalName + "/" + child;
+
+                    if (
+                        reader.file().getObjectType(childH5) ==
+                        HighFive::ObjectType::Group
+                    ) {
+                        visit(childH5, childLogical);
+                    }
+                }
+            };
+
+            visit(troot, "");
+        }
     }
 
     FactoryT factory_;

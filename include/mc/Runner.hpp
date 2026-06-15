@@ -6,11 +6,17 @@
 #include "mc/H5IO.hpp"
 #include "mc/AccumulatorIO.hpp"
 #include "mc/ModelHooks.hpp"
+#include "mc/ArrayObservable.hpp"
 
 #include <iostream>
 #include <utility>
 #include <atomic>
 #include <csignal>
+#include <unordered_map>
+#include <stdexcept>
+#include <vector>
+#include <functional>
+#include <highfive/H5File.hpp>
 
 namespace mc {
 
@@ -64,6 +70,10 @@ public:
             ObservableBatch batch = model_.fetchObservables();
             accumulator_.addBatch(batch);
 
+            for (const auto& arrBatch : model_.fetchArrayObservables()) {
+                arrayAccumulators_[arrBatch.name].add(arrBatch);
+            }
+
             completedSamples_ += static_cast<int>(batch.size());
 
             if (completedSamples_ % params_.checkpointInterval == 0) {
@@ -91,12 +101,91 @@ public:
     }
 
 private:
+
+    void writeArrayAccumulatorCheckpoint(H5Writer& writer) const {
+        for (const auto& [name, acc] : arrayAccumulators_) {
+            const std::string base =
+                "/checkpoint/array_observables/" + name;
+
+            writer.writeScalar(base + "/count", acc.count);
+
+            if (acc.count > 0 && !acc.sum.empty()) {
+                writer.writeArray(base + "/sum", acc.sum, acc.shape);
+
+                std::vector<unsigned long long> shape(
+                    acc.shape.begin(),
+                    acc.shape.end()
+                );
+
+                writer.writeVector(base + "/shape", shape);
+            }
+        }
+    }
+
+    void loadArrayAccumulatorCheckpoint(H5Reader& reader) {
+        const std::string root = "/checkpoint/array_observables";
+
+        if (!reader.file().exist(root)) {
+            return;
+        }
+
+        std::function<void(const std::string&, const std::string&)> visit;
+
+        visit = [&](const std::string& h5Path, const std::string& logicalName) {
+            auto g = reader.file().getGroup(h5Path);
+
+            if (g.exist("count")) {
+                ArrayAccumulator acc;
+
+                acc.count =
+                    reader.readScalar<unsigned long long>(h5Path + "/count");
+
+                if (
+                    acc.count > 0 &&
+                    reader.file().exist(h5Path + "/sum")
+                ) {
+                    reader.file().getDataSet(h5Path + "/sum").read(acc.sum);
+
+                    std::vector<unsigned long long> shape;
+                    reader.file().getDataSet(h5Path + "/shape").read(shape);
+
+                    acc.shape.assign(shape.begin(), shape.end());
+                }
+
+                arrayAccumulators_[logicalName] = std::move(acc);
+                return;
+            }
+
+            for (const auto& child : g.listObjectNames()) {
+                const std::string childH5 =
+                    h5Path + "/" + child;
+
+                const std::string childLogical =
+                    logicalName.empty() ? child : logicalName + "/" + child;
+
+                if (reader.file().getObjectType(childH5) == HighFive::ObjectType::Group) {
+                    visit(childH5, childLogical);
+                }
+            }
+        };
+
+        visit(root, "");
+    }
+
     void saveFinalOutput() const {
         H5Writer writer(params_.outname);
         writer.writeRunParams(params_);
         writer.writeModelMetadata(model_);
         writer.writeAccumulator(accumulator_);
-        writeExtraObservablesIfAvailable(model_, writer, 0);
+
+        for (const auto& [name, acc] : arrayAccumulators_) {
+            if (acc.count == 0) continue;
+
+            const std::string base = "/array_observables/" + name;
+
+            writer.writeArray(base, acc.mean(), acc.shape);
+            writer.writeScalar(base + "_count", acc.count);
+        }
     }
 
     void saveCheckpoint() const {
@@ -112,6 +201,8 @@ private:
         model_.saveCheckpoint(modelGroup);
 
         writer.writeAccumulatorCheckpoint(accumulator_);
+
+        writeArrayAccumulatorCheckpoint(writer);
     }
 
     void loadCheckpoint() {
@@ -126,11 +217,15 @@ private:
         model_.loadCheckpoint(modelGroup);
 
         loadAccumulatorCheckpoint(reader, accumulator_);
+
+        loadArrayAccumulatorCheckpoint(reader);
     }
 
     ModelT& model_;
     RunParams params_;
     ObservableAccumulator accumulator_;
+
+    std::unordered_map<std::string, ArrayAccumulator> arrayAccumulators_;
 
     int completedSamples_ = 0;
 };
