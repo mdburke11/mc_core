@@ -4,6 +4,7 @@
 #include "mc/ObservableBatch.hpp"
 #include "mc/Runner.hpp"
 #include "mc/H5IO.hpp"
+#include "mc/ArrayObservable.hpp"
 
 #include <highfive/H5Group.hpp>
 
@@ -36,6 +37,10 @@ public:
 
     double energy() const;
     void setTemperature(double T);
+
+    std::vector<mc::ArrayObservableBatch> fetchArrayObservables() const {
+        return {};
+    }
 
 private:
 

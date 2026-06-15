@@ -330,6 +330,8 @@ private:
         writer.writeVector("/pt/swap_accepts", swapAccepts_);
 
         for (int t = 0; t < static_cast<int>(tempSlots_.size()); ++t) {
+            const auto& slot = tempSlots_[t];
+
             bool hasArrays = false;
             for (const auto& [name, acc] : slot.arrays) {
                 if (acc.count > 0) {
