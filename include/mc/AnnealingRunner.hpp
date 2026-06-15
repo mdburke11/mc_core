@@ -5,6 +5,7 @@
 #include "mc/Accumulator.hpp"
 #include "mc/H5IO.hpp"
 #include "mc/AccumulatorIO.hpp"
+#include "mc/ArrayObservable.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -114,9 +115,10 @@ public:
         model.setTemperature(temperatures_[0]);
 
         ObservableAccumulator acc(runParams_.numBins);
+        std::unordered_map<std::string, ArrayAccumulator> arrayAccs;
 
         if (runParams_.resume) {
-            loadCheckpoint(ti, completed, model, acc);
+            loadCheckpoint(ti, completed, model, acc, arrayAccs);
             model.setTemperature(temperatures_[ti]);
         }
 
@@ -127,6 +129,7 @@ public:
             if (completed == 0) {
                 acc = ObservableAccumulator(runParams_.numBins);
                 addDerivedToAccumulator(acc, T);
+                arrayAccs.clear();
             }
 
             std::cout << "\n=== Annealing temperature "
@@ -149,15 +152,19 @@ public:
                 auto batch = model.fetchObservables();
                 acc.addBatch(batch);
 
+                for (const auto& arrBatch : model.fetchArrayObservables()) {
+                    arrayAccs[arrBatch.name].add(arrBatch);
+                }
+
                 completed += static_cast<int>(batch.size());
 
                 if (completed % runParams_.checkpointInterval == 0) {
-                    saveCheckpoint(ti, completed, model, acc);
+                    saveCheckpoint(ti, completed, model, acc, arrayAccs);
                 }
 
                 if (stopRequested.load()) {
                     std::cout << "Stop signal received. Saving annealing checkpoint.\n";
-                    saveCheckpoint(ti, completed, model, acc);
+                    saveCheckpoint(ti, completed, model, acc, arrayAccs);
                     return;
                 }
 
@@ -169,6 +176,7 @@ public:
             }
 
             storeStats(acc);
+            completedArrays_.push_back(arrayAccs);
 
             ++ti;
             completed = 0;
@@ -202,7 +210,8 @@ private:
         std::size_t ti,
         int completed,
         const ModelT& model,
-        const ObservableAccumulator& acc
+        const ObservableAccumulator& acc,
+        const std::unordered_map<std::string, ArrayAccumulator>& arrayAccs
     ) const {
         std::cout << "Saving annealing checkpoint at T index "
                   << ti << ", samples " << completed << "\n";
@@ -241,13 +250,17 @@ private:
                 vals
             );
         }
+
+        writeCurrentArrayCheckpoint(writer, arrayAccs);
+        writeCompletedArraysCheckpoint(writer);
     }
 
     void loadCheckpoint(
         std::size_t& ti,
         int& completed,
         ModelT& model,
-        ObservableAccumulator& acc
+        ObservableAccumulator& acc,
+        std::unordered_map<std::string, ArrayAccumulator>& arrayAccs
     ) {
         H5Reader reader(runParams_.checkpointFile);
 
@@ -267,6 +280,8 @@ private:
 
         loadAccumulatorCheckpoint(reader, acc);
         loadTempDataSoFar(reader);
+        loadCurrentArrayCheckpoint(reader, arrayAccs);
+        loadCompletedArraysCheckpoint(reader);
 
         std::cout << "Resumed annealing at T index "
                   << ti << ", samples "
@@ -315,6 +330,151 @@ private:
                 );
             }
         }
+
+        for (std::size_t i = 0; i < completedArrays_.size(); ++i) {
+            bool hasArrays = false;
+            for (const auto& [name, acc] : completedArrays_[i]) {
+                if (acc.count > 0) { hasArrays = true; break; }
+            }
+            if (!hasArrays) continue;
+
+            const std::string tbase =
+                "/array_observables/T" + std::to_string(i);
+
+            writer.writeScalar(tbase + "/T", temperatures_[i]);
+
+            for (const auto& [name, acc] : completedArrays_[i]) {
+                if (acc.count == 0) continue;
+                const std::string base = tbase + "/" + name;
+                writer.writeArray(base, acc.mean(), acc.shape);
+                writer.writeScalar(base + "_count", acc.count);
+            }
+        }
+    }
+
+    void writeCurrentArrayCheckpoint(
+        H5Writer& writer,
+        const std::unordered_map<std::string, ArrayAccumulator>& arrayAccs
+    ) const {
+        for (const auto& [name, acc] : arrayAccs) {
+            const std::string base = "/checkpoint/array_observables/" + name;
+            writer.writeScalar(base + "/count", acc.count);
+            if (acc.count > 0 && !acc.sum.empty()) {
+                writer.writeArray(base + "/sum", acc.sum, acc.shape);
+                std::vector<unsigned long long> shape(
+                    acc.shape.begin(), acc.shape.end()
+                );
+                writer.writeVector(base + "/shape", shape);
+            }
+        }
+    }
+
+    void loadCurrentArrayCheckpoint(
+        H5Reader& reader,
+        std::unordered_map<std::string, ArrayAccumulator>& arrayAccs
+    ) {
+        const std::string root = "/checkpoint/array_observables";
+        if (!reader.file().exist(root)) return;
+
+        std::function<void(const std::string&, const std::string&)> visit;
+        visit = [&](const std::string& h5Path, const std::string& logicalName) {
+            auto g = reader.file().getGroup(h5Path);
+            if (g.exist("count")) {
+                ArrayAccumulator acc;
+                acc.count =
+                    reader.readScalar<unsigned long long>(h5Path + "/count");
+                if (acc.count > 0 && reader.file().exist(h5Path + "/sum")) {
+                    reader.file().getDataSet(h5Path + "/sum").read(acc.sum);
+                    std::vector<unsigned long long> shape;
+                    reader.file().getDataSet(h5Path + "/shape").read(shape);
+                    acc.shape.assign(shape.begin(), shape.end());
+                }
+                arrayAccs[logicalName] = std::move(acc);
+                return;
+            }
+            for (const auto& child : g.listObjectNames()) {
+                const std::string childH5 = h5Path + "/" + child;
+                const std::string childLogical =
+                    logicalName.empty() ? child : logicalName + "/" + child;
+                if (reader.file().getObjectType(childH5) ==
+                    HighFive::ObjectType::Group) {
+                    visit(childH5, childLogical);
+                }
+            }
+        };
+        visit(root, "");
+    }
+
+    void writeCompletedArraysCheckpoint(H5Writer& writer) const {
+        for (std::size_t i = 0; i < completedArrays_.size(); ++i) {
+            for (const auto& [name, acc] : completedArrays_[i]) {
+                if (acc.count == 0) continue;
+                const std::string base =
+                    "/checkpoint/array_data_so_far/T" +
+                    std::to_string(i) + "/" + name;
+                writer.writeScalar(base + "/count", acc.count);
+                if (!acc.sum.empty()) {
+                    writer.writeArray(base + "/sum", acc.sum, acc.shape);
+                    std::vector<unsigned long long> shape(
+                        acc.shape.begin(), acc.shape.end()
+                    );
+                    writer.writeVector(base + "/shape", shape);
+                }
+            }
+        }
+    }
+
+    void loadCompletedArraysCheckpoint(H5Reader& reader) {
+        const std::string root = "/checkpoint/array_data_so_far";
+        if (!reader.file().exist(root)) return;
+
+        auto g = reader.file().getGroup(root);
+        int maxT = -1;
+        for (const auto& child : g.listObjectNames()) {
+            if (!child.empty() && child[0] == 'T') {
+                try { maxT = std::max(maxT, std::stoi(child.substr(1))); }
+                catch (...) {}
+            }
+        }
+        if (maxT < 0) return;
+        completedArrays_.resize(maxT + 1);
+
+        for (int i = 0; i <= maxT; ++i) {
+            const std::string troot = root + "/T" + std::to_string(i);
+            if (!reader.file().exist(troot)) continue;
+
+            std::function<void(const std::string&, const std::string&)> visit;
+            visit = [&](const std::string& h5Path,
+                        const std::string& logicalName) {
+                auto g = reader.file().getGroup(h5Path);
+                if (g.exist("count")) {
+                    ArrayAccumulator acc;
+                    acc.count =
+                        reader.readScalar<unsigned long long>(h5Path + "/count");
+                    if (acc.count > 0 &&
+                        reader.file().exist(h5Path + "/sum")) {
+                        reader.file().getDataSet(h5Path + "/sum").read(acc.sum);
+                        std::vector<unsigned long long> shape;
+                        reader.file().getDataSet(h5Path + "/shape").read(shape);
+                        acc.shape.assign(shape.begin(), shape.end());
+                    }
+                    completedArrays_[i][logicalName] = std::move(acc);
+                    return;
+                }
+                for (const auto& child : g.listObjectNames()) {
+                    const std::string childH5 = h5Path + "/" + child;
+                    const std::string childLogical =
+                        logicalName.empty()
+                            ? child
+                            : logicalName + "/" + child;
+                    if (reader.file().getObjectType(childH5) ==
+                        HighFive::ObjectType::Group) {
+                        visit(childH5, childLogical);
+                    }
+                }
+            };
+            visit(troot, "");
+        }
     }
 
     FactoryT factory_;
@@ -326,6 +486,8 @@ private:
 
     std::unordered_map<std::string, std::vector<double>> means_;
     std::unordered_map<std::string, std::vector<double>> errors_;
+
+    std::vector<std::unordered_map<std::string, ArrayAccumulator>> completedArrays_;
 };
 
 }
