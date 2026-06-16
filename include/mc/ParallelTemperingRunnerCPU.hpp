@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include <vector>
 #include <sstream>
+#include <cstdio>
 #include <functional>
 #include <stdexcept>
 #include <highfive/H5File.hpp>
@@ -364,67 +365,73 @@ private:
         std::cout << "Saving PT checkpoint at sample "
                   << completed << "\n";
 
-        H5Writer writer(runParams_.checkpointFile);
+        const std::string tmp = runParams_.checkpointFile + ".tmp";
 
-        writer.writeScalar(
-            "/checkpoint/runner/completed_samples",
-            completed
-        );
+        {
+            H5Writer writer(tmp);
 
-        writer.writeScalar(
-            "/checkpoint/runner/pt_step",
-            ptStep
-        );
-
-        writer.writeVector(
-            "/checkpoint/runner/temp_to_replica",
-            temp_to_replica_
-        );
-
-        writer.writeVector(
-            "/checkpoint/runner/replica_to_temp",
-            replica_to_temp_
-        );
-
-        writer.writeVector(
-            "/checkpoint/runner/swap_attempts",
-            swapAttempts_
-        );
-
-        writer.writeVector(
-            "/checkpoint/runner/swap_accepts",
-            swapAccepts_
-        );
-
-        writer.writeVector(
-            "/checkpoint/runner/T_values",
-            temperatures_
-        );
-
-        for (int r = 0; r < static_cast<int>(replicas_.size()); ++r) {
-            auto g = writer.file().createGroup(
-                "/checkpoint/replicas/" +
-                std::to_string(r) +
-                "/model"
+            writer.writeScalar(
+                "/checkpoint/runner/completed_samples",
+                completed
             );
 
-            replicas_[r].model.saveCheckpoint(g);
-        }
-
-        for (int t = 0; t < static_cast<int>(tempSlots_.size()); ++t) {
-            writer.writeAccumulatorCheckpoint(
-                tempSlots_[t].acc,
-                "/checkpoint/temp_slots/" +
-                std::to_string(t) +
-                "/accumulators"
+            writer.writeScalar(
+                "/checkpoint/runner/pt_step",
+                ptStep
             );
+
+            writer.writeVector(
+                "/checkpoint/runner/temp_to_replica",
+                temp_to_replica_
+            );
+
+            writer.writeVector(
+                "/checkpoint/runner/replica_to_temp",
+                replica_to_temp_
+            );
+
+            writer.writeVector(
+                "/checkpoint/runner/swap_attempts",
+                swapAttempts_
+            );
+
+            writer.writeVector(
+                "/checkpoint/runner/swap_accepts",
+                swapAccepts_
+            );
+
+            writer.writeVector(
+                "/checkpoint/runner/T_values",
+                temperatures_
+            );
+
+            for (int r = 0; r < static_cast<int>(replicas_.size()); ++r) {
+                auto g = writer.file().createGroup(
+                    "/checkpoint/replicas/" +
+                    std::to_string(r) +
+                    "/model"
+                );
+
+                replicas_[r].model.saveCheckpoint(g);
+            }
+
+            for (int t = 0; t < static_cast<int>(tempSlots_.size()); ++t) {
+                writer.writeAccumulatorCheckpoint(
+                    tempSlots_[t].acc,
+                    "/checkpoint/temp_slots/" +
+                    std::to_string(t) +
+                    "/accumulators"
+                );
+            }
+
+            writeArrayAccumulatorCheckpoint(writer);
+
+            std::ostringstream ss;
+            ss << rng_;
+            writer.writeScalar("/checkpoint/runner/swap_rng_state", ss.str());
         }
 
-        writeArrayAccumulatorCheckpoint(writer);
-
-        std::ostringstream ss;
-        ss << rng_;
-        writer.writeScalar("/checkpoint/runner/swap_rng_state", ss.str());
+        std::rename(tmp.c_str(), runParams_.checkpointFile.c_str());
     }
 
     void loadCheckpoint(int& completed, int& ptStep) {
@@ -570,7 +577,7 @@ private:
                         reader.readScalar<unsigned long long>(h5Path + "/count");
 
                     if (acc.count > 0 && reader.file().exist(h5Path + "/sum")) {
-                        reader.file().getDataSet(h5Path + "/sum").read(acc.sum);
+                        reader.readArrayFlat(h5Path + "/sum", acc.sum);
 
                         std::vector<unsigned long long> shape;
                         reader.file().getDataSet(h5Path + "/shape").read(shape);

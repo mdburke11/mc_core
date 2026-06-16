@@ -100,6 +100,13 @@ public:
         file_.getDataSet(path).read(data);
     }
 
+    template <class T>
+    void readArrayFlat(const std::string& path, std::vector<T>& data) const {
+        auto dset = file_.getDataSet(path);
+        data.resize(dset.getSpace().getElementCount());
+        dset.read_raw<T>(data.data());
+    }
+
     HighFive::File& file() { return file_; }
 
 private:

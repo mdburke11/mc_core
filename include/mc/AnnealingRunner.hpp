@@ -8,6 +8,7 @@
 #include "mc/ArrayObservable.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <atomic>
 #include <csignal>
 #include <cmath>
@@ -216,43 +217,49 @@ private:
         std::cout << "Saving annealing checkpoint at T index "
                   << ti << ", samples " << completed << "\n";
 
-        H5Writer writer(runParams_.checkpointFile);
+        const std::string tmp = runParams_.checkpointFile + ".tmp";
 
-        writer.writeScalar(
-            "/checkpoint/runner/current_temperature_index",
-            static_cast<unsigned long long>(ti)
-        );
+        {
+            H5Writer writer(tmp);
 
-        writer.writeScalar(
-            "/checkpoint/runner/completed_samples_at_T",
-            completed
-        );
-
-        writer.writeVector("/checkpoint/runner/T_values", temperatures_);
-
-        auto modelGroup =
-            writer.file().createGroup("/checkpoint/replicas/0/model");
-
-        model.saveCheckpoint(modelGroup);
-
-        writer.writeAccumulatorCheckpoint(acc);
-
-        for (const auto& [name, vals] : means_) {
-            writer.writeVector(
-                "/checkpoint/temp_data_so_far/" + name,
-                vals
+            writer.writeScalar(
+                "/checkpoint/runner/current_temperature_index",
+                static_cast<unsigned long long>(ti)
             );
+
+            writer.writeScalar(
+                "/checkpoint/runner/completed_samples_at_T",
+                completed
+            );
+
+            writer.writeVector("/checkpoint/runner/T_values", temperatures_);
+
+            auto modelGroup =
+                writer.file().createGroup("/checkpoint/replicas/0/model");
+
+            model.saveCheckpoint(modelGroup);
+
+            writer.writeAccumulatorCheckpoint(acc);
+
+            for (const auto& [name, vals] : means_) {
+                writer.writeVector(
+                    "/checkpoint/temp_data_so_far/" + name,
+                    vals
+                );
+            }
+
+            for (const auto& [name, vals] : errors_) {
+                writer.writeVector(
+                    "/checkpoint/temp_data_so_far/" + name + "_err",
+                    vals
+                );
+            }
+
+            writeCurrentArrayCheckpoint(writer, arrayAccs);
+            writeCompletedArraysCheckpoint(writer);
         }
 
-        for (const auto& [name, vals] : errors_) {
-            writer.writeVector(
-                "/checkpoint/temp_data_so_far/" + name + "_err",
-                vals
-            );
-        }
-
-        writeCurrentArrayCheckpoint(writer, arrayAccs);
-        writeCompletedArraysCheckpoint(writer);
+        std::rename(tmp.c_str(), runParams_.checkpointFile.c_str());
     }
 
     void loadCheckpoint(
@@ -384,7 +391,7 @@ private:
                 acc.count =
                     reader.readScalar<unsigned long long>(h5Path + "/count");
                 if (acc.count > 0 && reader.file().exist(h5Path + "/sum")) {
-                    reader.file().getDataSet(h5Path + "/sum").read(acc.sum);
+                    reader.readArrayFlat(h5Path + "/sum", acc.sum);
                     std::vector<unsigned long long> shape;
                     reader.file().getDataSet(h5Path + "/shape").read(shape);
                     acc.shape.assign(shape.begin(), shape.end());
@@ -453,7 +460,7 @@ private:
                         reader.readScalar<unsigned long long>(h5Path + "/count");
                     if (acc.count > 0 &&
                         reader.file().exist(h5Path + "/sum")) {
-                        reader.file().getDataSet(h5Path + "/sum").read(acc.sum);
+                        reader.readArrayFlat(h5Path + "/sum", acc.sum);
                         std::vector<unsigned long long> shape;
                         reader.file().getDataSet(h5Path + "/shape").read(shape);
                         acc.shape.assign(shape.begin(), shape.end());

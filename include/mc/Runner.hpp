@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <vector>
 #include <functional>
+#include <cstdio>
 #include <highfive/H5File.hpp>
 
 namespace mc {
@@ -144,7 +145,7 @@ private:
                     acc.count > 0 &&
                     reader.file().exist(h5Path + "/sum")
                 ) {
-                    reader.file().getDataSet(h5Path + "/sum").read(acc.sum);
+                    reader.readArrayFlat(h5Path + "/sum", acc.sum);
 
                     std::vector<unsigned long long> shape;
                     reader.file().getDataSet(h5Path + "/shape").read(shape);
@@ -192,17 +193,23 @@ private:
         std::cout << "Saving checkpoint at sample "
           << completedSamples_ << "\n";
 
-        H5Writer writer(params_.checkpointFile);
-        writer.writeScalar("/checkpoint/runner/completed_samples", completedSamples_);
+        const std::string tmp = params_.checkpointFile + ".tmp";
 
-        auto modelGroup =
-            writer.file().createGroup("/checkpoint/replicas/0/model");
+        {
+            H5Writer writer(tmp);
+            writer.writeScalar("/checkpoint/runner/completed_samples", completedSamples_);
 
-        model_.saveCheckpoint(modelGroup);
+            auto modelGroup =
+                writer.file().createGroup("/checkpoint/replicas/0/model");
 
-        writer.writeAccumulatorCheckpoint(accumulator_);
+            model_.saveCheckpoint(modelGroup);
 
-        writeArrayAccumulatorCheckpoint(writer);
+            writer.writeAccumulatorCheckpoint(accumulator_);
+
+            writeArrayAccumulatorCheckpoint(writer);
+        }
+
+        std::rename(tmp.c_str(), params_.checkpointFile.c_str());
     }
 
     void loadCheckpoint() {
