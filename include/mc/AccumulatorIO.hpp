@@ -26,7 +26,7 @@ inline void loadAccumulatorCheckpoint(
     auto g = reader.file().getGroup(basePath);
 
     for (const auto& name : g.listObjectNames()) {
-        if (name == "total_count") continue;
+        if (name == "total_count" || name == "raw") continue;
 
         auto obsGroup = g.getGroup(name);
 
@@ -41,6 +41,17 @@ inline void loadAccumulatorCheckpoint(
         data.totalCount = static_cast<std::size_t>(count);
 
         acc.rawDataMutable()[name] = std::move(data);
+    }
+
+    if (acc.hasRawSamples() && reader.file().exist(basePath + "/raw")) {
+        auto rawGroup = reader.file().getGroup(basePath + "/raw");
+        for (const auto& name : rawGroup.listObjectNames()) {
+            if (acc.rawSampleNames().count(name)) {
+                std::vector<double> samples;
+                rawGroup.getDataSet(name).read(samples);
+                acc.rawSamplesMutable()[name] = std::move(samples);
+            }
+        }
     }
 }
 

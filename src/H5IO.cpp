@@ -101,6 +101,14 @@ void H5Writer::writeAccumulatorCheckpoint(
                 static_cast<unsigned long long>(data.totalCount)
             );
         }
+
+        if (acc.hasRawSamples()) {
+            auto rawPath = basePath + "/raw";
+            getOrCreateGroup(rawPath);
+            for (const auto& [name, samples] : acc.rawSamples()) {
+                writeVector(rawPath + "/" + name, samples);
+            }
+        }
     }
 
 int H5Reader::readInt(const std::string& path) const {

@@ -3,6 +3,7 @@
 #include "mc/ObservableBatch.hpp"
 
 #include <cmath>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -32,6 +33,10 @@ public:
     explicit ObservableAccumulator(int numBins)
         : numBins_(numBins) {}
 
+    void enableRawSamples(const std::set<std::string>& names) {
+        rawSampleNames_ = names;
+    }
+
     void addDerivedObservable(const std::string& name, DerivedFunction f) {
         derived_[name] = std::move(f);
     }
@@ -58,6 +63,11 @@ public:
                 obs.binCounts[b] += 1;
                 obs.totalSum += values[i];
                 obs.totalCount += 1;
+            }
+
+            if (rawSampleNames_.count(name)) {
+                auto& raw = rawSamples_[name];
+                raw.insert(raw.end(), values.begin(), values.end());
             }
         }
 
@@ -220,6 +230,22 @@ public:
         return derived_;
     }
 
+    const auto& rawSamples() const {
+        return rawSamples_;
+    }
+
+    auto& rawSamplesMutable() {
+        return rawSamples_;
+    }
+
+    const auto& rawSampleNames() const {
+        return rawSampleNames_;
+    }
+
+    bool hasRawSamples() const {
+        return !rawSampleNames_.empty();
+    }
+
     int numBins() const {
         return numBins_;
     }
@@ -238,6 +264,9 @@ private:
 
     std::unordered_map<std::string, ObservableData> data_;
     std::unordered_map<std::string, DerivedFunction> derived_;
+
+    std::set<std::string> rawSampleNames_;
+    std::unordered_map<std::string, std::vector<double>> rawSamples_;
 };
 
 }
