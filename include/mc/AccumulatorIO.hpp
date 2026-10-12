@@ -3,6 +3,7 @@
 #include "mc/Accumulator.hpp"
 #include "mc/H5IO.hpp"
 
+#include <iostream>
 #include <string>
 
 namespace mc {
@@ -39,6 +40,30 @@ inline void loadAccumulatorCheckpoint(
         obsGroup.getAttribute("total_sum").read(data.totalSum);
 
         data.totalCount = static_cast<std::size_t>(count);
+
+        if (obsGroup.hasAttribute("bin_size")) {
+            unsigned long long bs;
+            obsGroup.getAttribute("bin_size").read(bs);
+            data.binSize = static_cast<std::size_t>(bs);
+        } else {
+            // Checkpoint from the old interleaved binning (sample i -> bin
+            // i % numBins).  Its bins cannot be turned into contiguous blocks;
+            // keep them with a bin size consistent with the sample count so
+            // that accumulation continues correctly.  Errors for this run
+            // still carry the old interleaved-bin caveat.
+            const std::size_t nb = data.binSums.size();
+            std::size_t bs = 1;
+            while (data.totalCount >= nb * bs) bs *= 2;
+            data.binSize = bs;
+            static bool warned = false;
+            if (!warned) {
+                std::cerr << "Warning: checkpoint uses interleaved bins "
+                             "(written before mc_core switched to contiguous "
+                             "blocks); error bars of this run are only "
+                             "approximate\n";
+                warned = true;
+            }
+        }
 
         acc.rawDataMutable()[name] = std::move(data);
     }

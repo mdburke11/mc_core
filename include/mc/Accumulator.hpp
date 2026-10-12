@@ -2,6 +2,7 @@
 
 #include "mc/ObservableBatch.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <string>
@@ -18,11 +19,21 @@ struct Stats {
     std::size_t count = 0;
 };
 
+// Binning: samples go into contiguous blocks of binSize consecutive samples.
+// When all numBins blocks are full, neighbouring pairs are merged and binSize
+// doubles, so there are always between numBins/2 and numBins complete,
+// equal-sized blocks (plus one partially filled block).  Errors use only the
+// complete blocks; means use every sample.
 struct ObservableData {
     std::vector<double> binSums;
     std::vector<std::size_t> binCounts;
     double totalSum = 0.0;
     std::size_t totalCount = 0;
+    std::size_t binSize = 1;
+
+    std::size_t numFullBins() const {
+        return binSums.empty() ? 0 : totalCount / binSize;
+    }
 };
 
 using DerivedFunction =
@@ -31,7 +42,10 @@ using DerivedFunction =
 class ObservableAccumulator {
 public:
     explicit ObservableAccumulator(int numBins)
-        : numBins_(numBins) {}
+        : numBins_(numBins) {
+        if (numBins < 2 || numBins % 2 != 0)
+            throw std::runtime_error("numBins must be an even number >= 2");
+    }
 
     void enableRawSamples(const std::set<std::string>& names) {
         rawSampleNames_ = names;
@@ -56,14 +70,8 @@ public:
                 obs.binCounts.assign(numBins_, 0);
             }
 
-            for (std::size_t i = 0; i < n; ++i) {
-                std::size_t b = (totalCount_ + i) % numBins_;
-
-                obs.binSums[b] += values[i];
-                obs.binCounts[b] += 1;
-                obs.totalSum += values[i];
-                obs.totalCount += 1;
-            }
+            for (std::size_t i = 0; i < n; ++i)
+                addSample(obs, values[i]);
 
             if (rawSampleNames_.count(name)) {
                 auto& raw = rawSamples_[name];
@@ -139,46 +147,47 @@ public:
         return s;
     }
 
+    // Means of the complete (equal-sized, contiguous) bins.
     std::vector<double> primaryBinMeans(const std::string& name) const {
         const auto& obs = data_.at(name);
 
         std::vector<double> out;
-        for (int b = 0; b < numBins_; ++b) {
-            if (obs.binCounts[b] > 0) {
-                out.push_back(obs.binSums[b] / obs.binCounts[b]);
-            }
-        }
+        for (std::size_t b = 0; b < obs.numFullBins(); ++b)
+            out.push_back(obs.binSums[b] / static_cast<double>(obs.binCounts[b]));
         return out;
     }
 
+    // Leave-one-bin-out values of f over the complete bins.  All observables
+    // are expected to be added in every batch, so their bins hold the same
+    // samples; the number of jackknife bins is the smallest common count.
     std::vector<double> derivedJackknifeValues(const DerivedFunction& f) const {
         std::vector<double> out;
+        if (data_.empty()) return out;
 
-        for (int omit = 0; omit < numBins_; ++omit) {
+        std::size_t nfull = static_cast<std::size_t>(-1);
+        for (const auto& [name, obs] : data_)
+            nfull = std::min(nfull, obs.numFullBins());
+
+        std::unordered_map<std::string, double> fullSum, fullCount;
+        for (const auto& [name, obs] : data_) {
+            double s = 0.0, c = 0.0;
+            for (std::size_t b = 0; b < nfull; ++b) {
+                s += obs.binSums[b];
+                c += static_cast<double>(obs.binCounts[b]);
+            }
+            fullSum[name] = s;
+            fullCount[name] = c;
+        }
+
+        for (std::size_t omit = 0; omit < nfull; ++omit) {
             std::unordered_map<std::string, double> means;
-
             bool valid = true;
-
             for (const auto& [name, obs] : data_) {
-                double sum = obs.totalSum;
-                std::size_t count = obs.totalCount;
-
-                if (omit < static_cast<int>(obs.binSums.size())) {
-                    sum -= obs.binSums[omit];
-                    count -= obs.binCounts[omit];
-                }
-
-                if (count == 0) {
-                    valid = false;
-                    break;
-                }
-
-                means[name] = sum / static_cast<double>(count);
+                double count = fullCount[name] - static_cast<double>(obs.binCounts[omit]);
+                if (count <= 0.0) { valid = false; break; }
+                means[name] = (fullSum[name] - obs.binSums[omit]) / count;
             }
-
-            if (valid) {
-                out.push_back(f(means));
-            }
+            if (valid) out.push_back(f(means));
         }
 
         return out;
@@ -259,6 +268,28 @@ public:
     }
 
 private:
+    void addSample(ObservableData& obs, double v) const {
+        std::size_t b = obs.totalCount / obs.binSize;
+        if (b == static_cast<std::size_t>(numBins_)) {
+            // all bins full: merge neighbouring pairs, double the bin size
+            const std::size_t half = static_cast<std::size_t>(numBins_) / 2;
+            for (std::size_t k = 0; k < half; ++k) {
+                obs.binSums[k]   = obs.binSums[2 * k]   + obs.binSums[2 * k + 1];
+                obs.binCounts[k] = obs.binCounts[2 * k] + obs.binCounts[2 * k + 1];
+            }
+            for (std::size_t k = half; k < static_cast<std::size_t>(numBins_); ++k) {
+                obs.binSums[k] = 0.0;
+                obs.binCounts[k] = 0;
+            }
+            obs.binSize *= 2;
+            b = half;
+        }
+        obs.binSums[b] += v;
+        obs.binCounts[b] += 1;
+        obs.totalSum += v;
+        obs.totalCount += 1;
+    }
+
     int numBins_;
     std::size_t totalCount_ = 0;
 

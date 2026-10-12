@@ -65,6 +65,7 @@ void H5Writer::writeAccumulator(const ObservableAccumulator& acc) {
 
         obsGroup.createDataSet("bin_sums", data.binSums);
         obsGroup.createDataSet("bin_counts", data.binCounts);
+        obsGroup.createAttribute("bin_size", static_cast<unsigned long long>(data.binSize));
     }
 
     for (const auto& [name, f] : acc.derivedObservables()) {
@@ -99,6 +100,10 @@ void H5Writer::writeAccumulatorCheckpoint(
             obsGroup.createAttribute(
                 "total_count",
                 static_cast<unsigned long long>(data.totalCount)
+            );
+            obsGroup.createAttribute(
+                "bin_size",
+                static_cast<unsigned long long>(data.binSize)
             );
         }
 
